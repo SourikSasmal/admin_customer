@@ -116,14 +116,14 @@ app.post("/place-order", (req, res) => {
         }
 
         const updateStatus = `
-UPDATE products
-SET status =
-CASE
-WHEN inventory_available > 0 THEN 'Complied'
-ELSE 'Non-Complied'
-END
-WHERE product_id = ?
-`;
+          UPDATE products
+          SET status =
+          CASE
+            WHEN inventory_available > 0 THEN 'Complied'
+            ELSE 'Non-Complied'
+          END
+          WHERE product_id = ?
+        `;
 
         db.query(updateStatus, [product_id], (err) => {
           if (err) {
@@ -265,6 +265,7 @@ app.get("/admin/orders", (req, res) => {
       customers.username,
       products.product_name,
       orders.quantity,
+      orders.order_date,
       orders.delivery_date
 
     FROM orders
@@ -274,6 +275,8 @@ app.get("/admin/orders", (req, res) => {
 
     JOIN products
       ON orders.product_id = products.product_id
+
+    ORDER BY orders.order_id DESC
   `;
 
   db.query(sql, (err, result) => {
@@ -286,6 +289,50 @@ app.get("/admin/orders", (req, res) => {
     }
 
     res.json(result);
+  });
+});
+
+app.post("/chatbot", (req, res) => {
+  const { message } = req.body;
+
+  const sql = `
+    SELECT
+      product_name,
+      material_no,
+      inventory_available,
+      available_date,
+      status
+    FROM products
+  `;
+
+  db.query(sql, (err, products) => {
+    if (err) {
+      return res.status(500).json({
+        reply: "Database Error",
+      });
+    }
+
+    const msg = message.toLowerCase();
+
+    for (let product of products) {
+      if (
+        msg.includes(product.product_name.toLowerCase()) ||
+        msg.includes(product.material_no.toLowerCase())
+      ) {
+        return res.json({
+          reply:
+            `Product: ${product.product_name}\n` +
+            `Material No: ${product.material_no}\n` +
+            `Available: ${product.inventory_available}\n` +
+            `Status: ${product.status}\n` +
+            `Available Date: ${new Date(product.available_date).toLocaleDateString()}`,
+        });
+      }
+    }
+
+    res.json({
+      reply: "Sorry, I only answer questions about available products.",
+    });
   });
 });
 
