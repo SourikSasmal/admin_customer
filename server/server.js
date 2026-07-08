@@ -84,26 +84,59 @@ app.get("/products", (req, res) => {
 app.post("/place-order", (req, res) => {
   const { customer_id, product_id, quantity, delivery_date } = req.body;
 
-  const sql = `
-        INSERT INTO orders
-        (customer_id, product_id, quantity, delivery_date)
-        VALUES (?, ?, ?, ?)
-    `;
+  const insertOrder = `
+    INSERT INTO orders
+    (customer_id, product_id, quantity, order_date, delivery_date)
+    VALUES (?, ?, ?, CURDATE(), ?)
+  `;
 
   db.query(
-    sql,
+    insertOrder,
     [customer_id, product_id, quantity, delivery_date],
-    (err, result) => {
+    (err) => {
       if (err) {
         console.log(err);
-
         return res.status(500).json({
           message: "Database Error",
         });
       }
 
-      res.json({
-        message: "Order Placed Successfully",
+      const updateStock = `
+        UPDATE products
+        SET inventory_available = inventory_available - ?
+        WHERE product_id = ?
+      `;
+
+      db.query(updateStock, [quantity, product_id], (err) => {
+        if (err) {
+          console.log(err);
+          return res.status(500).json({
+            message: "Database Error",
+          });
+        }
+
+        const updateStatus = `
+UPDATE products
+SET status =
+CASE
+WHEN inventory_available > 0 THEN 'Complied'
+ELSE 'Non-Complied'
+END
+WHERE product_id = ?
+`;
+
+        db.query(updateStatus, [product_id], (err) => {
+          if (err) {
+            console.log(err);
+            return res.status(500).json({
+              message: "Database Error",
+            });
+          }
+
+          res.json({
+            message: "Order Placed Successfully",
+          });
+        });
       });
     },
   );
@@ -114,10 +147,11 @@ app.get("/orders/:customerId", (req, res) => {
 
   const sql = `
         SELECT
-            orders.order_id,
-            products.product_name,
-            orders.quantity,
-            orders.delivery_date
+             orders.order_id,
+             products.product_name,
+             orders.quantity,
+             orders.order_date,
+             orders.delivery_date
 
         FROM orders
 
