@@ -1,8 +1,15 @@
+require("dotenv").config();
+const { GoogleGenAI } = require("@google/genai");
+
 const express = require("express");
 const cors = require("cors");
 const db = require("./db");
 
 const app = express();
+
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
+});
 
 app.use(cors());
 app.use(express.json());
@@ -305,34 +312,58 @@ app.post("/chatbot", (req, res) => {
     FROM products
   `;
 
-  db.query(sql, (err, products) => {
+  db.query(sql, async (err, products) => {
     if (err) {
       return res.status(500).json({
         reply: "Database Error",
       });
     }
 
-    const msg = message.toLowerCase();
+    try {
+      const inventory = products
+        .map(
+          (p) =>
+            `Product: ${p.product_name}
+Material No: ${p.material_no}
+Available: ${p.inventory_available}
+Status: ${p.status}
+Available Date: ${new Date(p.available_date).toLocaleDateString()}`,
+        )
+        .join("\n\n");
 
-    for (let product of products) {
-      if (
-        msg.includes(product.product_name.toLowerCase()) ||
-        msg.includes(product.material_no.toLowerCase())
-      ) {
-        return res.json({
-          reply:
-            `Product: ${product.product_name}\n` +
-            `Material No: ${product.material_no}\n` +
-            `Available: ${product.inventory_available}\n` +
-            `Status: ${product.status}\n` +
-            `Available Date: ${new Date(product.available_date).toLocaleDateString()}`,
-        });
-      }
+      const prompt = `
+You are an Inventory Management Assistant.
+
+Rules:
+- If the user says "hi", "hello", "hey", or greets you, greet them back politely.
+- If the user asks about inventory, product availability, material number, stock, status, or delivery, answer using ONLY the inventory information below.
+- If the answer is not present in the inventory, say "I couldn't find that product."
+- If the user asks something completely unrelated (like jokes, weather, coding, movies, etc.), reply:
+"I can only answer questions related to inventory and products."
+
+Inventory:
+
+${inventory}
+
+User Question:
+${message}
+`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt,
+      });
+
+      res.json({
+        reply: response.text,
+      });
+    } catch (error) {
+      console.log(error);
+
+      res.status(500).json({
+        reply: "Gemini Error",
+      });
     }
-
-    res.json({
-      reply: "Sorry, I only answer questions about available products.",
-    });
   });
 });
 
